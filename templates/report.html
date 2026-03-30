@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CNQuant 商品期货量化回测评估引擎 V2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+        
+        /* 隐藏滚动条但保留功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+</head>
+<body class="p-8">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">CNQuant 商品期货极值回测引擎</h1>
+        <p class="text-slate-400 mb-8">深度量化评测体系 V2.0：基于多元品种的十大核心指标剖析</p>
+        
+        <div class="flex space-x-3 mb-6 border-b border-slate-700 pb-2 overflow-x-auto no-scrollbar" id="tabs">
+            <!-- Tabs JS logic -->
+        </div>
+
+        <div id="metrics-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+            <!-- Metrics cards will be injected here -->
+        </div>
+
+        <div class="bg-slate-800 rounded-xl p-6 shadow-xl border border-slate-700 relative">
+            <h2 class="text-xl font-semibold mb-4 text-emerald-400" id="chart-title">净值与绝对回撤曲线</h2>
+            <div id="main-chart" class="w-full h-[550px]"></div>
+        </div>
+    </div>
+
+    <script>
+        const chartData = {{ chart_data | safe }};
+        const keys = Object.keys(chartData.strategies);
+        
+        let currentStrategy = keys[0];
+        let echartInstance = echarts.init(document.getElementById('main-chart'), 'dark');
+        
+        function renderTabs() {
+            const tabsDiv = document.getElementById('tabs');
+            tabsDiv.innerHTML = keys.map(k => `
+                <button onclick="switchTab('${k}')" class="px-3 py-2 text-sm rounded transition-colors ${k === currentStrategy ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'} whitespace-nowrap">
+                    ${k}
+                </button>
+            `).join('');
+        }
+        
+        function renderMetrics(metrics) {
+            const container = document.getElementById('metrics-container');
+            container.innerHTML = Object.entries(metrics).map(([k, v]) => {
+                let colorClass = 'text-white';
+                if (typeof v === 'string' && v.includes('-') && !k.includes('日期') && !k.includes('深谷日') && !k.includes('顶峰日')) {
+                    colorClass = 'text-red-400';
+                } else if (k.includes('收益') && typeof v === 'string' && !v.includes('-') && v !== '0.00%') {
+                    colorClass = 'text-emerald-400';
+                } else if (k.includes('盈亏比') && parseFloat(v) > 1.0) {
+                    colorClass = 'text-emerald-400';
+                }
+                
+                return `
+                <div class="bg-slate-800/50 p-4 rounded-lg border border-slate-700 hover:bg-slate-800 transition-colors">
+                    <p class="text-slate-400 text-xs mb-1">${k}</p>
+                    <p class="text-lg font-bold truncate ${colorClass}">${v}</p>
+                </div>
+                `;
+            }).join('');
+        }
+        
+        function renderChart() {
+            const data = chartData.strategies[currentStrategy];
+            const dates = chartData.dates;
+            
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'cross' }
+                },
+                legend: {
+                    data: ['策略资金净值', '单一合约死扛基准(1手)', '最大历史回撤区域'],
+                    textStyle: { color: '#cbd5e1' },
+                    bottom: 0
+                },
+                grid: { left: '4%', right: '4%', bottom: '10%', top: '5%', containLabel: true },
+                dataZoom: [{ type: 'inside' }, { type: 'slider', textStyle: { color: '#cbd5e1' }, bottom: 30 }],
+                xAxis: {
+                    type: 'category',
+                    data: dates,
+                    axisLine: { lineStyle: { color: '#475569' } },
+                    axisLabel: { color: '#94a3b8' }
+                },
+                yAxis: [
+                    {
+                        type: 'value',
+                        name: '账户总权益 (¥)',
+                        splitLine: { lineStyle: { color: '#1e293b' } },
+                        axisLabel: { color: '#94a3b8' },
+                        scale: true
+                    },
+                    {
+                        type: 'value',
+                        name: '资金回撤 (%)',
+                        position: 'right',
+                        splitLine: { show: false },
+                        axisLabel: { color: '#ef4444' },
+                        max: 0
+                    }
+                ],
+                series: [
+                    {
+                        name: '策略资金净值',
+                        type: 'line',
+                        data: data.equity,
+                        itemStyle: { color: '#34d399' },
+                        lineStyle: { width: 2 },
+                        showSymbol: false
+                    },
+                    {
+                        name: '单一合约死扛基准(1手)',
+                        type: 'line',
+                        data: data.market,
+                        itemStyle: { color: '#64748b' },
+                        lineStyle: { width: 1.5, type: 'dashed' },
+                        showSymbol: false
+                    },
+                    {
+                        name: '最大历史回撤区域',
+                        type: 'line',
+                        yAxisIndex: 1,
+                        data: data.drawdown,
+                        itemStyle: { color: '#ef4444' },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(239, 68, 68, 0.05)' },
+                                { offset: 1, color: 'rgba(239, 68, 68, 0.4)' }
+                            ])
+                        },
+                        showSymbol: false,
+                        lineStyle: { width: 1 }
+                    }
+                ]
+            };
+            
+            echartInstance.setOption(option);
+            document.getElementById('chart-title').innerText = currentStrategy + " · 净值与风控深度剖面";
+        }
+        
+        window.switchTab = function(strat) {
+            currentStrategy = strat;
+            renderTabs();
+            renderMetrics(chartData.strategies[strat].metrics);
+            renderChart();
+        }
+        
+        window.addEventListener('resize', () => echartInstance.resize());
+        
+        switchTab(keys[0]);
+    </script>
+</body>
+</html>
