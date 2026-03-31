@@ -24,11 +24,18 @@
         <h1 class="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">CNQuant 商品期货极值回测引擎</h1>
         <p class="text-slate-400 mb-8">深度量化评测体系 V4.0：基于多元品种的十大核心指标剖析</p>
         
-        <div class="mb-6 border-b border-slate-700 pb-3 flex items-center">
-            <label for="strategy-select" class="mr-4 text-emerald-400 font-semibold">选择评测组合:</label>
-            <select id="strategy-select" onchange="switchTab(this.value)" class="bg-slate-800 text-white border border-slate-600 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-lg cursor-pointer font-medium hover:bg-slate-700 transition-colors">
-                <!-- Select options JS logic -->
-            </select>
+        <div class="mb-6 border-b border-slate-700 pb-3 flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0">
+            <div class="flex items-center">
+                <label for="strategy-select" class="mr-4 text-emerald-400 font-semibold whitespace-nowrap">选择评测组合:</label>
+                <select id="strategy-select" onchange="switchTab(this.value)" class="bg-slate-800 text-white border border-slate-600 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-lg cursor-pointer font-medium hover:bg-slate-700 transition-colors w-full md:w-auto">
+                    <!-- Select options JS logic -->
+                </select>
+            </div>
+        </div>
+
+        <!-- Strategy & Asset Description Box -->
+        <div id="strategy-description" class="p-5 bg-slate-800/60 border-l-4 border-blue-500 rounded-r-xl shadow-inner text-slate-300 text-sm mb-6 leading-relaxed tracking-wide transition-opacity duration-300">
+            <!-- Dynamic descriptive text -->
         </div>
 
         <div id="metrics-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
@@ -157,10 +164,51 @@
             document.getElementById('chart-title').innerText = currentStrategy + " · 净值与风控深度剖面";
         }
         
+        const stratDescriptions = {
+            "趋势跟随": "【趋势跟随 (Dual Moving Average)】：双均线交叉趋势追踪模型。当短期均线（10日）向上突破长期均线（30日）时入场做多；当下穿时平多做空。该策略在清晰的单边牛熊市中表现极其优异，是截断亏损让利润狂奔的典型代表，但在横盘震荡期极易遭受双面止损（俗称“左右打脸”）。",
+            "震荡反转": "【震荡反转 (Mean Reversion)】：RSI与动态布林带结合的均值回归模型。当RSI深陷超卖区（<30）且价格跌破布林带下轨时，认为下跌动能衰竭，在此抄底做多；反之超买突破上轨时摸顶做空。此系统专为宽幅震荡（箱体）行情设计，在单边暴涨暴跌中存在逆势扛单的较高回撤风险。",
+            "海龟交易法则": "【海龟交易法则 (Turtle System 一)】：华尔街最负盛名的CTA传世经典。20日价格高点绝对突破入场做多，10日低点跌破则无条件斩仓止损/止盈出局。由于彻底剥离了人的主观预测预判，系统自带严苛的断臂求生风控，能在几年一遇的超级大宗周期里获取不对称的暴利。"
+        };
+
+        const assetDescriptions = {
+            "RB0": "【工业品-螺纹钢(RB0)】：中国基建宏观经济的绝对晴雨表，也是国内商品市场流动性最好、连续性最强的纯正工业品之王。合约乘数 10 倍杠杆。",
+            "I0": "【黑色系-铁矿石(I0)】：黑色产业链的高波动猛兽。严重受海外矿山联合定价与国内钢厂宏观需求双重影响，极易受政策催化走出波澜壮阔的单边行情。合约乘数 100 倍巨大杠杆。",
+            "CU0": "【有色金属-沪铜(CU0)】：拥有“铜博士”之冠的有色金属龙头。与全球地缘宏观经济和美元指数深度挂钩，定价锚定伦敦铜（LME）。其长期趋势极其流畅深远。合约乘数 5 倍杠杆。",
+            "TA0": "【化工品-PTA(TA0)】：深度依附于国际原油价格的化工系主力大单品。波动具有极为强烈的库存周期性与输入性通胀特征。合约乘数 5 倍杠杆。",
+            "FG0": "【建材-玻璃(FG0)】：深度捆绑我国房地产竣工周期的后端建材品种，走势经常“妖气十足”，时常受现货厂库现结压板影响产生反逻辑急涨急跌行情。合约乘数 20 倍杠杆。",
+            "M0": "【农产品-豆粕(M0)】：国内农业品量化标杆。定价受北美及南美大豆种植区极端气候（拉尼娜/厄尔尼诺）及主产国进出口政策影响极大，具备明显的时令季节性炒作规律。合约乘数 10 倍杠杆。",
+            "SR0": "【软商品-白糖(SR0)】：人送外号“软妖糖”。因其主产区（巴西、印度及我国广西）的天气不可测特性及替代营养品等众多因素交织，常现3-5年的跨度长牛熊切变，是考验长线趋势策略耐心的绝佳试金石。合约乘数 10 倍杠杆。"
+        };
+
+        function updateDescription(stratName) {
+            let descBox = document.getElementById('strategy-description');
+            
+            let stratKey = "趋势跟随";
+            if (stratName.includes("海龟")) stratKey = "海龟交易法则";
+            else if (stratName.includes("震荡")) stratKey = "震荡反转";
+
+            let assetKey = "未知品种";
+            for (let code in assetDescriptions) {
+                if (stratName.includes(`(${code})`)) {
+                    assetKey = code;
+                    break;
+                }
+            }
+
+            const assetInfo = assetDescriptions[assetKey] || "【未知资产】抱歉，暂无该品种合约解读。";
+            const stratInfo = stratDescriptions[stratKey] || "【未知策略】抱歉，暂无该量化策略的详情说明。";
+
+            descBox.innerHTML = `
+                <div class="mb-2"><span class="text-blue-400 font-bold tracking-wider mr-2">标的剖析 ➤</span> <span class="text-slate-200">${assetInfo}</span></div>
+                <div><span class="text-emerald-400 font-bold tracking-wider mr-2">策略图鉴 ➤</span> <span class="text-slate-200">${stratInfo}</span></div>
+            `;
+        }
+
         window.switchTab = function(strat) {
             currentStrategy = strat;
             renderTabs();
             renderMetrics(chartData.strategies[strat].metrics);
+            updateDescription(strat);
             renderChart();
         }
         
