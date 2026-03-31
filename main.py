@@ -28,7 +28,7 @@ COMMODITY_NAMES = {
 }
 
 def main():
-    print("初始化 CNQuant 商品期货量化回测评估引擎 (V3)...")
+    print("初始化 CNQuant 商品期货量化回测评估引擎 (V4)...")
     
     # 全局测试时间范围：横跨最新的 2026 年大波动期
     START_DATE = "2020-01-01"
