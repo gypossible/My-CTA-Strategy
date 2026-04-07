@@ -5,22 +5,24 @@ class BaseStrategy:
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         raise NotImplementedError
 
-class DualMovingAverageStrategy(BaseStrategy):
-    def __init__(self, short_window=20, long_window=60):
+class DualEmaStrategy(BaseStrategy):
+    def __init__(self, short_window=10, long_window=30):
         self.short_window = short_window
         self.long_window = long_window
         
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         data = df.copy()
-        data['SMA_Short'] = data['Close'].rolling(window=self.short_window).mean()
-        data['SMA_Long'] = data['Close'].rolling(window=self.long_window).mean()
+        # Use EMA for faster response instead of SMA
+        data['EMA_Short'] = data['Close'].ewm(span=self.short_window, adjust=False).mean()
+        data['EMA_Long'] = data['Close'].ewm(span=self.long_window, adjust=False).mean()
         
         data['Signal'] = 0.0
-        valid_idx = self.long_window
+        diff = data['EMA_Short'] - data['EMA_Long']
         
-        diff = data['SMA_Short'].iloc[valid_idx:] - data['SMA_Long'].iloc[valid_idx:]
+        # When diff > 0, EMA_Short is above EMA_Long -> Long signal
+        # When diff < 0, EMA_Short is below EMA_Long -> Short signal
         signal_array = np.where(diff > 0, 1.0, np.where(diff < 0, -1.0, 0.0))
-        data.loc[data.index[valid_idx:], 'Signal'] = signal_array
+        data['Signal'] = signal_array
         
         data['Position'] = data['Signal'].shift(1).fillna(0)
         return data
@@ -50,14 +52,33 @@ class RsiMeanReversionStrategy(BaseStrategy):
         buy_cond = (data['RSI'] < self.rsi_os) & (data['Close'] < data['BB_Lower'])
         sell_cond = (data['RSI'] > self.rsi_ob) & (data['Close'] > data['BB_Upper'])
         
+        # Mean Reversion touch exit protection (止盈逻辑：碰均线即离场)
+        exit_long_cond = data['Close'] >= data['BB_MA']
+        exit_short_cond = data['Close'] <= data['BB_MA']
+        
         positions = np.zeros(len(data))
         current_pos = 0
         
         for i in range(len(data)):
-            if buy_cond.iloc[i]:
-                current_pos = 1
-            elif sell_cond.iloc[i]:
-                current_pos = -1
+            # Entry and Exit logic evaluated chronologically
+            if current_pos == 0:
+                if buy_cond.iloc[i]:
+                    current_pos = 1
+                elif sell_cond.iloc[i]:
+                    current_pos = -1
+            elif current_pos == 1:
+                # If we hit sell conditions or our moving average exit for mean reversion
+                if sell_cond.iloc[i]:
+                    current_pos = -1
+                elif exit_long_cond.iloc[i]:
+                    current_pos = 0
+            elif current_pos == -1:
+                # If we hit buy conditions or our moving average exit
+                if buy_cond.iloc[i]:
+                    current_pos = 1
+                elif exit_short_cond.iloc[i]:
+                    current_pos = 0
+                    
             positions[i] = current_pos
             
         data['Signal'] = positions
@@ -66,26 +87,26 @@ class RsiMeanReversionStrategy(BaseStrategy):
 
 class TurtleTradingStrategy(BaseStrategy):
     """
-    海龟交易法则 (Turtle Trading System 1 核心版)：
-    主要利用唐奇安通道（Donchian Channel）的 N 日高低点进行破位突破验证。
-    多头长线入场：当价格突破过去 20 日的最高点，建立多头头寸。
-    空头短线入场：当价格跌破过去 20 日的最低点，建立空头头寸。
-    做多止盈离场：当价格跌破过去 10 日的最低点，多头平仓。
-    做空止盈离场：当价格突破过去 10 日的最高点，空头平仓。
+    海龟交易法则 (强化优化版)：
+    新增长期均线趋势过滤器 (Trend Filter)。
+    只有当价格高于长线SMA时才允许做多；只有低于长线SMA时才允许做空。这有效阻止了逆势做单引发的假突破。
     """
-    def __init__(self, entry_window=20, exit_window=10):
+    def __init__(self, entry_window=20, exit_window=10, trend_filter_window=60):
         self.entry_window = entry_window
         self.exit_window = exit_window
+        self.trend_filter_window = trend_filter_window
         
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         data = df.copy()
         
-        # 避免未来数据：用 shift(1) 寻找过去的最高/最低点
         data['Highest_20'] = data['High'].shift(1).rolling(window=self.entry_window).max()
         data['Lowest_20'] = data['Low'].shift(1).rolling(window=self.entry_window).min()
         
         data['Highest_10'] = data['High'].shift(1).rolling(window=self.exit_window).max()
         data['Lowest_10'] = data['Low'].shift(1).rolling(window=self.exit_window).min()
+        
+        # 趋势过滤器 Trend Filter
+        data['Trend_SMA'] = data['Close'].shift(1).rolling(window=self.trend_filter_window).mean()
         
         positions = np.zeros(len(data))
         current_pos = 0
@@ -95,32 +116,33 @@ class TurtleTradingStrategy(BaseStrategy):
         l20 = data['Lowest_20'].values
         h10 = data['Highest_10'].values
         l10 = data['Lowest_10'].values
+        trend_sma = data['Trend_SMA'].values
         
         for i in range(len(data)):
-            if pd.isna(h20[i]) or pd.isna(l20[i]):
+            if pd.isna(h20[i]) or pd.isna(l20[i]) or pd.isna(trend_sma[i]):
                 positions[i] = 0
                 continue
                 
-            # 入场逻辑
+            # 入场逻辑 (具备趋势过滤)
             if current_pos == 0:
-                if close[i] > h20[i]:
+                if close[i] > h20[i] and close[i] > trend_sma[i]:
                     current_pos = 1
-                elif close[i] < l20[i]:
+                elif close[i] < l20[i] and close[i] < trend_sma[i]:
                     current_pos = -1
                     
             # 持有多头逻辑
             elif current_pos == 1:
                 if close[i] < l10[i]:
-                    current_pos = 0   # 多头离场
-                if close[i] < l20[i]:
-                    current_pos = -1  # 反转极弱势，甚至反手空头
+                    current_pos = 0   # 多头止盈/止损离场
+                if close[i] < l20[i] and close[i] < trend_sma[i]:
+                    current_pos = -1  # 反转极弱势，反手空头 (附带空头趋势确认)
                     
             # 持有空头逻辑
             elif current_pos == -1:
                 if close[i] > h10[i]:
-                    current_pos = 0   # 空头离场
-                if close[i] > h20[i]:
-                    current_pos = 1   # 反转极强势，反手多头
+                    current_pos = 0   # 空头止盈/止损离场
+                if close[i] > h20[i] and close[i] > trend_sma[i]:
+                    current_pos = 1   # 反转极强势，反手多头 (附带多头趋势确认)
                     
             positions[i] = current_pos
             

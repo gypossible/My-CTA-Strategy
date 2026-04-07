@@ -1,7 +1,7 @@
 import os
 import time
 from data import fetch_futures_data
-from strategy import DualMovingAverageStrategy, RsiMeanReversionStrategy, TurtleTradingStrategy
+from strategy import DualEmaStrategy, RsiMeanReversionStrategy, TurtleTradingStrategy
 from backtester import FuturesVectorBacktester
 from metrics import get_performance_metrics
 from reporter import generate_report
@@ -67,25 +67,25 @@ def main():
         mult = MULTIPLIER_MAP[sym]
         cname = COMMODITY_NAMES[sym]
         
-        # 策略 1: 趋势跟随
+        # 策略 1: 趋势跟随 (EMA升级版)
         combinations.append({
             "name": f"{cname}({sym}) - 趋势跟随", 
             "symbol": sym, 
-            "strategy": DualMovingAverageStrategy(short_window=10, long_window=30), 
+            "strategy": DualEmaStrategy(short_window=10, long_window=30), 
             "multiplier": mult
         })
-        # 策略 2: 震荡反转
+        # 策略 2: 震荡反转 (中轨保护优化版)
         combinations.append({
             "name": f"{cname}({sym}) - 震荡反转", 
             "symbol": sym, 
             "strategy": RsiMeanReversionStrategy(rsi_period=14, rsi_ob=70, rsi_os=30, bb_period=20, bb_std=2.0), 
             "multiplier": mult
         })
-        # 策略 3: 海龟交易法则
+        # 策略 3: 海龟交易法则 (长趋势突破过滤版)
         combinations.append({
             "name": f"{cname}({sym}) - 海龟交易法则", 
             "symbol": sym, 
-            "strategy": TurtleTradingStrategy(entry_window=20, exit_window=10), 
+            "strategy": TurtleTradingStrategy(entry_window=20, exit_window=10, trend_filter_window=60), 
             "multiplier": mult
         })
     
